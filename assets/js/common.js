@@ -26,7 +26,6 @@ window.initDB = function() {
 
 /**
  * 2. 공통 UI 주입 (initHeader)
- * 로고와 3개 메뉴를 왼쪽에 배치하고, 기존 버튼들은 우측에 유지함
  */
 window.initHeader = function(pageTitle) {
     if (document.getElementById('settings-modal')) return;
@@ -51,7 +50,6 @@ window.initHeader = function(pageTitle) {
             .header-left { display: flex; align-items: center; gap: 40px; }
             .logo { font-size: 1.5rem; font-weight: bold; color: var(--accent); text-decoration: none; cursor: pointer; }
             
-            /* 리드님 요청: 로고 옆 텍스트 메뉴 */
             .text-nav { display: flex; gap: 20px; }
             .text-nav a { 
                 color: var(--text); text-decoration: none; font-weight: bold; font-size: 0.95rem; transition: 0.2s; 
@@ -68,7 +66,6 @@ window.initHeader = function(pageTitle) {
             .btn-highlight { border: 1px solid var(--accent); color: var(--accent); background: transparent; }
             #header-spacer { height: 75px; }
 
-            /* 기존 모달 및 세이버 스타일 */
             #settings-modal {
                 position: fixed; top: 0; left: 0; width: 100%; height: 100%;
                 background: rgba(0,0,0,0.85); display: none; justify-content: center; align-items: center;
@@ -170,7 +167,7 @@ window.initHeader = function(pageTitle) {
 };
 
 /**
- * 3. 기능 함수 (원본 로직 유지)
+ * 3. 기능 함수
  */
 window.toggleTheme = function() {
     const next = document.body.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
@@ -268,7 +265,7 @@ window.importFromJson = function(event) {
     reader.onload = (e) => {
         const config = JSON.parse(e.target.result);
         ['title', 'dept', 'name', 'contact', 'warn'].forEach(f => {
-            const el = document.getElementById(`set-${f}`);
+            const el = document.getElementById('set-' + f);
             if(el) el.value = config[f] || "";
         });
         alert("데이터를 불러왔습니다. '기기 저장'을 눌러주세요.");
@@ -276,7 +273,13 @@ window.importFromJson = function(event) {
     reader.readAsText(file);
 };
 
-// 4. 강력 백업 로직 (모든 DB 자동 스캔)
+window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.deactivateSaver();
+});
+
+/**
+ * 4. 통합 데이터 관리 (Data Management) - 강력 백업 및 복구
+ */
 window.exportAllData = async function() {
     try {
         const backup = { localStorage: {}, indexedDB: {} };
@@ -313,7 +316,7 @@ window.exportAllData = async function() {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        alert("Product List를 포함한 모든 데이터가 성공적으로 백업되었습니다.");
+        alert("모든 데이터가 백업되었습니다.");
     } catch (error) {
         console.error("Export Error:", error);
         alert("데이터 백업 중 오류가 발생했습니다.");
@@ -359,26 +362,20 @@ window.importAllData = function(event) {
                         if (db.objectStoreNames.contains(storeName)) {
                             const tx = db.transaction(storeName, "readwrite");
                             const store = tx.objectStore(storeName);
-                            await new Promise(resolve => {
-                                store.clear().onsuccess = resolve;
-                            });
+                            store.clear(); 
                             stores[storeName].forEach(item => store.put(item));
                         }
                     }
                     db.close();
                 }
             }
-            alert("모든 데이터가 복구되었습니다. 새로고침합니다.");
+            alert("모든 데이터가 성공적으로 복구되었습니다. 적용을 위해 페이지를 새로고침합니다.");
             location.reload();
         } catch (error) {
             console.error("Import Error:", error);
-            alert("복원 중 오류가 발생했습니다.");
+            alert("복원 중 오류가 발생했습니다. 백업 파일 형식을 확인해주세요.");
         }
     };
     reader.readAsText(file);
     event.target.value = '';
 };
-
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') window.deactivateSaver();
-});
