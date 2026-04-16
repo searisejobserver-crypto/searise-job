@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H/W Work - Dashboard</title>
+    <!-- 공통 로직 파일 연결 -->
+    <script src="./assets/js/common.js" defer></script>
+    <style>
+        /* 대시보드 전용 스타일: 카드 레이아웃만 남김 */
+        .main-content { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+            gap: 25px; 
+            padding: 50px; 
+            max-width: 1100px; 
+            margin: 0 auto;
+        }
+        .card { 
+            background: var(--card); 
+            border: 1px solid var(--border); 
+            padding: 50px 20px; 
+            border-radius: 15px; 
+            text-align: center; 
+            text-decoration: none; 
+            color: inherit; 
+            transition: 0.3s; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+        .card:hover { 
+            transform: translateY(-10px); 
+            border-color: var(--accent); 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3); 
+        }
+        .card h2 { margin: 0; font-size: 1.6rem; color: var(--text); }
+        .card .icon { font-size: 3.5rem; }
+    </style>
+</head>
+<body>
+    <!-- 
+      주의: 헤더, 세이버, 모달 HTML을 직접 넣지 마세요.
+      common.js가 실행되면서 자동으로 삽입합니다. 
+    -->
+    <main class="main-content">
+        <a href="Calculation.html" class="card">
+            <span class="icon">🧮</span>
+            <h2>Calculation</h2>
+        </a>
+        <a href="TimeLine.html" class="card">
+            <span class="icon">🕒</span>
+            <h2>TimeLine</h2>
+        </a>
+        <a href="sample.html" class="card">
+            <span class="icon">📦</span>
+            <h2>Sample Manager</h2>
+        </a>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const startUI = () => {
+                if (typeof window.initHeader === 'function') {
+                    window.initHeader('H/W Work');
+                    
+                    // URL 파라미터 체크 (연동용)
+                    const urlParams = new URLSearchParams(window.location.search);
+                    if (urlParams.get('openConfig')) window.openModal();
+                    if (urlParams.get('runSaver')) window.activateSaver();
+                } else {
+                    setTimeout(startUI, 100); // 로드될 때까지 재시도
+                }
+            };
+            startUI();
+        });
+    </script>
+</body>
+</html>
