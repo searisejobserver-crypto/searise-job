@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>TimeLine - Dashboard Sync</title>
+    <!-- 공통 로직 파일 연결 -->
+    <script src="./assets/js/common.js" defer></script>
+    <style>
+        /* --- 공통 테마 기본값 --- */
+        :root { 
+            --temp-red: #FF3B30; --humi-blue: #007AFF; --cycle-orange: #FF9500;
+            --doing: #00FFCC; --bg: #1a1a1a; --card: #252525; --text: #eee; --axis: #ffffff;
+            --input-bg: #111; --border: #444; --accent: #00d8d6;
+        }
+        
+        /* 라이트 모드 가독성 대폭 개선 */
+        [data-theme="light"] {
+            --bg: #f5f6fa; --card: #ffffff; --text: #2f3640; --border: #b2bec3; 
+            --axis: #2f3640; --input-bg: #fdfdfd; --accent: #0097e6;
+        }
+
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: var(--bg); 
+            color: var(--text); 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            transition: 0.3s; 
+        }
+
+        /* 날짜/시간 입력창 달력 아이콘 색상 보정 */
+        input[type="datetime-local"], input[type="time"] {
+            color-scheme: dark;
+        }
+        [data-theme="light"] input[type="datetime-local"], 
+        [data-theme="light"] input[type="time"] {
+            color-scheme: light;
+        }
+        
+        /* 상단 툴바 */
+        .toolbar { 
+            display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; 
+            margin: 5px 10px; padding: 10px; background: var(--card); 
+            border-radius: 8px; border: 1px solid var(--border); 
+        }
+        .toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+        
+        .toolbar-group > * {
+            height: 36px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* 드롭바 및 입력창 다이나믹 크기 조절 */
+        .scenario-select {
+            padding: 0 10px; border-radius: 4px; background: var(--input-bg); 
+            color: var(--text); border: 1px solid var(--border); font-weight: bold; 
+            width: auto; max-width: 300px; 
+        }
+
+        .scenario-title-disp {
+            color: var(--accent); font-weight: bold; font-size: 1.2rem;
+            white-space: pre-wrap; line-height: 1.2; word-break: keep-all; max-width: 300px;
+        }
+
+        /* 온/습도 범위 표기 디스플레이 */
+        .scenario-range-disp {
+            color: var(--accent);
+            font-size: 0.95rem;
+            margin: 0 10px;
+            font-weight: 600;
+            background: rgba(0, 216, 214, 0.1);
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 216, 214, 0.3);
+            white-space: nowrap;
+        }
+        [data-theme="light"] .scenario-range-disp {
+            background: rgba(0, 151, 230, 0.1);
+            border-color: rgba(0, 151, 230, 0.3);
+            color: #0097e6;
+        }
+
+        .dynamic-date {
+            width: auto; 
+            min-width: 180px;
+            padding: 0 10px;
+            font-family: inherit;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            background: var(--input-bg);
+            color: var(--text);
+        }
+
+        /* 메인 레이아웃: 좌측 캔버스 / 우측 설정 패널 */
+        .main-container { 
+            display: flex; gap: 15px; padding: 0 10px 20px 10px;
+            height: calc(100vh - 165px); 
+        }
+        
+        #canvas-wrapper { 
+            flex: 2.5; background: #000; border-radius: 8px; 
+            border: 2px solid #555; position: relative; overflow: hidden;
+        }
+        [data-theme="light"] #canvas-wrapper { background: #fff; border-color: var(--border); }
+        
+        canvas { width: 100%; height: 100%; display: block; position: absolute; top: 0; left: 0; }
+
+        .total-badge {
+            position: absolute; top: 15px; right: 15px; background: rgba(0,0,0,0.6); 
+            padding: 8px 12px; border-radius: 6px; font-size: 0.9rem; color: #fff; 
+            backdrop-filter: blur(4px); pointer-events: none; border: 1px solid rgba(255,255,255,0.1); z-index: 100;
+        }
+
+        /* 우측 설정 영역 */
+        .config-panel { 
+            flex: 1.3; background: var(--card); border-radius: 8px; 
+            border: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; 
+        }
+        
+        .config-header { 
+            padding: 12px 5px; background: #333; border-bottom: 2px solid #555; 
+            display: grid; grid-template-columns: 24px 85px 120px 80px 1fr 1fr 30px; 
+            gap: 4px; text-align: center; font-weight: bold; font-size: 13px; color: #fff; 
+        }
+        [data-theme="light"] .config-header { background: #dfe6e9; color: #2d3436; border-bottom-color: #b2bec3; }
+        
+        .step-list { flex-grow: 1; overflow-y: auto; padding: 8px; }
+        
+        /* 행 스타일 및 드래그 애니메이션 */
+        .row { 
+            display: grid; grid-template-columns: 24px 85px 120px 80px 1fr 1fr 30px; 
+            gap: 4px; margin-bottom: 6px; align-items: center; 
+            transition: opacity 0.2s, background 0.2s;
+        }
+        .row.dragging { opacity: 0.4; }
+        .row.drag-over { box-shadow: inset 0 2px 0 var(--accent); background: rgba(0, 216, 214, 0.1); border-radius: 4px; }
+        
+        .drag-handle {
+            cursor: grab; color: var(--sub-text); font-size: 14px; 
+            display: flex; justify-content: center; align-items: center; user-select: none;
+        }
+        .drag-handle:active { cursor: grabbing; }
+
+        /* 입력창 디자인 최적화 */
+        select, input { 
+            background: var(--input-bg); border: 1px solid var(--border); color: var(--text); 
+            padding: 6px; border-radius: 4px; text-align: center; width: 100%; box-sizing: border-box; font-size: 13px;
+            font-weight: bold; transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        select:focus, input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0, 216, 214, 0.2); }
+        
+        .input-temp { color: var(--temp-red); border-color: #631e1e; }
+        .input-humi { color: var(--humi-blue); border-color: #1e3a63; }
+        .time-input { color: #00ffcc; }
+        
+        [data-theme="light"] .input-temp { color: #c0392b; }
+        [data-theme="light"] .input-humi { color: #2980b9; }
+        [data-theme="light"] .time-input { color: #00897b; }
+        [data-theme="light"] select, [data-theme="light"] input { color: #2d3436; }
+        
+        .btn-run { background: #2e7d32; color: white; min-width: 80px; padding: 0 15px; border-radius: 4px; font-weight: bold; border:none; cursor: pointer; transition: 0.3s;}
+        .btn-run.stop { background: #c62828; }
+        .btn-util { background: #444; color: white; padding: 0 12px; border-radius: 4px; font-weight: bold; border:none; cursor: pointer; font-size: 12px; white-space: nowrap; transition: 0.3s; }
+        .btn-util:hover { background: #555; }
+        .btn-delete { background: #c0392b; color: #fff; }
+        .btn-delete:hover { background: #e74c3c; }
+        .btn-add-step { background: #444; color: #fff; width: 100%; padding: 15px; font-size: 15px; border: none; cursor: pointer; border-top: 1px solid var(--border); transition: 0.3s; }
+        .btn-add-step:hover { background: #555; }
+    </style>
+</head>
+<body>
+
+<!-- 구간(Cycle) 선택용 Datalist (직접입력 지원) -->
+<datalist id="cycleOptionsList">
+    <option value="Cycle1"></option>
+    <option value="Cycle2"></option>
+    <option value="상온유지"></option>
+</datalist>
+
+<!-- Step 선택용 Datalist (직접입력 지원) -->
+<datalist id="stepOptionsList">
+    <option value="상온유지"></option>
+    <option value="상온상승"></option>
+    <option value="상온하강"></option>
+    <option value="저온유지"></option>
+    <option value="저온상승"></option>
+    <option value="저온하강"></option>
+    <option value="고온유지"></option>
+    <option value="고온상승"></option>
+    <option value="고온하강"></option>
+    <option value="65% 상온 유지"></option>
+</datalist>
+
+<div id="timeline-app">
+    <!-- TimeLine 전용 툴바 -->
+    <div class="toolbar">
+        <div class="toolbar-group">
+            <span id="scenario-title-disp" class="scenario-title-disp">empty</span>
+            <span id="scenario-range-disp" class="scenario-range-disp"></span> <!-- 온도/습도 범위 추가 -->
+            <input type="datetime-local" id="start-time" class="dynamic-date" onchange="forceDraw()">
+        </div>
+        <div class="toolbar-group">
+            <select id="scenario-select" class="scenario-select" onchange="loadSelectedScenario()"></select>
+            <button class="btn-util" onclick="addScenario()">Add</button>
+            <button id="save-btn" class="btn-util" onclick="saveScenario()">Save</button>
+            <button class="btn-util" onclick="saveAsScenario()">Save as</button>
+            <button class="btn-util btn-delete" onclick="deleteScenario()">Delete</button>
+            <div style="width:1px; background:var(--border); height:20px; margin:0 5px;"></div>
+            <button class="btn-util" onclick="forceDraw()">Refresh</button>
+            <button id="run-btn" class="btn-run" onclick="toggleRun()">Start ▶</button>
+        </div>
+    </div>
+
+    <!-- 메인 컨테이너 -->
+    <div class="main-container">
+        <!-- 좌측 그래프 영역 -->
+        <div id="canvas-wrapper">
+            <canvas id="timelineCanvas"></canvas>
+            <div class="total-badge" id="totalTime">Total: 1h 0m</div>
+        </div>
+        
+        <!-- 우측 설정 패널 -->
+        <div class="config-panel">
+            <div class="config-header">
+                <div title="드래그 앤 드롭 정렬 (Ctrl 키를 누른 채로 드롭하면 복사됩니다.)" style="cursor: help;">☰ </div>
+                <div>구간</div><div>Step</div><div>HH:MM</div><div>Temp(℃)</div><div>Humi(%)</div><div></div>
+            </div>
+            <div id="stepContainer" class="step-list"></div>
+            <button class="btn-add-step" onclick="addStep()">+ 단계 추가</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let steps = [];
+    let scenarioDB = { "empty": [] };
+    let currentScenarioName = "empty";
+    let isRunning = false;
+    let lastDrawTime = 0;
+    let refreshTimer = null; 
+    let dragStartIndex = -1; 
+    let isModified = false;  
+    
+    const canvas = document.getElementById('timelineCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function markModified(modified = true) {
+        isModified = modified;
+        const saveBtn = document.getElementById('save-btn');
+        if (!saveBtn) return;
+        
+        if (isModified) {
+            saveBtn.style.backgroundColor = 'var(--cycle-orange)';
+            saveBtn.style.color = '#fff';
+            saveBtn.style.borderColor = 'var(--cycle-orange)';
+            saveBtn.innerText = 'Save ⚠️';
+        } else {
+            saveBtn.style.backgroundColor = '';
+            saveBtn.style.color = '';
+            saveBtn.style.borderColor = '';
+            saveBtn.innerText = 'Save';
+        }
+    }
+
+    window.onload = function() {
+        let retryCount = 0;
+        const checkCommon = setInterval(() => {
+            if (typeof window.initHeader === 'function' || typeof window.initCommonUI === 'function') {
+                clearInterval(checkCommon);
+                if (typeof window.initHeader === 'function') window.initHeader('TimeLine Monitor');
+                else window.initCommonUI('TimeLine Monitor');
+                waitForDB();
+            } else {
+                retryCount++;
+                if (retryCount > 30) {
+                    clearInterval(checkCommon);
+                    console.warn("common.js 로드 지연. 독립 모드로 실행합니다.");
+                    waitForDB();
+                }
+            }
+        }, 100);
+    };
+
+    function waitForDB() {
+        let dbWait = 0;
+        const dbCheck = setInterval(() => {
+            if (window.db || dbWait > 20) {
+                clearInterval(dbCheck);
+                setupScenarioDB();
+            }
+            dbWait++;
+        }, 100);
+    }
+
+    function setupScenarioDB() {
+        const d = new Date(); d.setMinutes(d.getMinutes() - 30);
+        document.getElementById('start-time').value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+        if (!window.db) {
+            let data = localStorage.getItem('timeline_scenarios');
+            if (data) scenarioDB = JSON.parse(data);
+            finishSetup();
+            return;
+        }
+
+        const req = window.db.transaction("settings", "readonly").objectStore("settings").get("timeline_scenarios");
+        req.onsuccess = () => {
+            if (req.result && req.result.data) {
+                scenarioDB = req.result.data;
+            }
+            if (!scenarioDB["empty"]) scenarioDB["empty"] = [];
+            finishSetup();
+        };
+        req.onerror = () => {
+            finishSetup();
+        };
+    }
+
+    function finishSetup() {
+        renderScenarioDropdown();
+        loadSelectedScenario();
+        requestAnimationFrame(drawLoop);
+    }
+
+    function saveScenariosToDB() {
+        if (!window.db) {
+            localStorage.setItem('timeline_scenarios', JSON.stringify(scenarioDB));
+            return;
+        }
+        const tx = window.db.transaction("settings", "readwrite");
+        tx.objectStore("settings").put({ id: "timeline_scenarios", data: scenarioDB });
+    }
+
+    function addScenario() {
+        const name = prompt("추가할 새 시나리오 이름을 입력하세요:");
+        if (!name) return;
+        if (scenarioDB[name]) {
+            alert("이미 존재하는 이름입니다.");
+            return;
+        }
+        scenarioDB[name] = [{ cyc: "Cycle1", name: "상온유지", time: "1:00", temp: 25, humi: 50 }];
+        currentScenarioName = name;
+        saveScenariosToDB();
+        renderScenarioDropdown();
+        document.getElementById('scenario-select').value = name;
+        loadSelectedScenario();
+    }
+
+    function deleteScenario() {
+        if (currentScenarioName === "empty") {
+            alert("'empty' 시나리오는 삭제할 수 없습니다.");
+            return;
+        }
+        if (confirm(`[${currentScenarioName}] 시나리오를 정말 삭제하시겠습니까?`)) {
+            delete scenarioDB[currentScenarioName];
+            currentScenarioName = "empty";
+            saveScenariosToDB();
+            renderScenarioDropdown();
+            loadSelectedScenario();
+        }
+    }
+
+    function saveScenario() {
+        if (currentScenarioName === "empty") {
+            saveAsScenario();
+            return;
+        }
+        scenarioDB[currentScenarioName] = JSON.parse(JSON.stringify(steps));
+        saveScenariosToDB();
+        markModified(false);
+        alert(`[${currentScenarioName}] 시나리오가 저장되었습니다.`);
+    }
+
+    function saveAsScenario() {
+        const name = prompt("새 시나리오 이름을 입력하세요:");
+        if (!name) return;
+        if (name === "empty") {
+            alert("'empty' 이름으로는 덮어쓸 수 없습니다.");
+            return;
+        }
+        currentScenarioName = name;
+        scenarioDB[name] = JSON.parse(JSON.stringify(steps));
+        saveScenariosToDB();
+        renderScenarioDropdown();
+        markModified(false);
+        alert(`[${name}] 시나리오가 저장되었습니다.`);
+        
+        document.getElementById('scenario-select').value = name;
+        loadSelectedScenario();
+    }
+
+    function renderScenarioDropdown() {
+        const select = document.getElementById('scenario-select');
+        select.innerHTML = '';
+        for (let name in scenarioDB) {
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            if (name === currentScenarioName) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
+
+    function loadSelectedScenario() {
+        currentScenarioName = document.getElementById('scenario-select').value;
+        document.getElementById('scenario-title-disp').innerText = currentScenarioName;
+        steps = JSON.parse(JSON.stringify(scenarioDB[currentScenarioName] || []));
+        
+        if (steps.length === 0) {
+            steps = [{ cyc: "Cycle1", name: "상온유지", time: "1:00", temp: 25, humi: 50 }];
+        }
+        
+        renderInputs();
+        forceDraw();
+        markModified(false);
+    }
+
+    function addStep() {
+        const last = steps[steps.length - 1] || { cyc: "Cycle1", name: "상온유지", time: "1:00", temp: 25, humi: 50 };
+        steps.push({ 
+            cyc: last.cyc, name: last.name, time: "1:00", 
+            temp: Number(last.temp), humi: Number(last.humi) 
+        });
+        markModified();
+        renderInputs();
+        forceDraw();
+    }
+
+    function renderInputs() {
+        const container = document.getElementById('stepContainer');
+        container.innerHTML = "";
+        steps.forEach((s, i) => {
+            const div = document.createElement('div');
+            div.className = 'row';
+            
+            div.ondragstart = (e) => handleDragStart(e, i);
+            div.ondragover = (e) => handleDragOver(e);
+            div.ondragenter = (e) => handleDragEnter(e);
+            div.ondragleave = (e) => handleDragLeave(e);
+            div.ondrop = (e) => handleDrop(e, i);
+            div.ondragend = (e) => handleDragEnd(e);
+
+            div.innerHTML = `
+                <div class="drag-handle" title="드래그: 이동, Ctrl+드래그: 복사"
+                     onmousedown="this.parentNode.setAttribute('draggable', true)"
+                     onmouseup="this.parentNode.removeAttribute('draggable')"
+                     onmouseleave="this.parentNode.removeAttribute('draggable')">☰</div>
+                <input list="cycleOptionsList" type="text" value="${s.cyc}" placeholder="구간 선택/입력" 
+                       oninput="steps[${i}].cyc=this.value; markModified(); forceDraw();">
+                <input list="stepOptionsList" type="text" value="${s.name}" placeholder="Step 선택/입력" 
+                       oninput="steps[${i}].name=this.value; markModified(); forceDraw();">
+                <input type="text" class="time-input" value="${s.time}" placeholder="HH:MM" 
+                       oninput="handleTimeInput(this, ${i})" 
+                       onblur="formatTimeBlur(this, ${i})"
+                       onkeydown="if(event.key==='Enter') this.blur();">
+                <input type="number" class="input-temp" value="${s.temp}" min="-50" max="90" step="5" oninput="steps[${i}].temp=Number(this.value); markModified(); forceDraw();">
+                <input type="number" class="input-humi" value="${s.humi}" min="0" max="100" step="5" oninput="steps[${i}].humi=Number(this.value); markModified(); forceDraw();">
+                <button style="color:#ff5e57; background:none; font-size:20px; cursor:pointer; border:none;" onclick="removeStep(${i})">×</button>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function removeStep(i) {
+        if (steps.length > 1) {
+            steps.splice(i, 1);
+            markModified();
+            renderInputs();
+            forceDraw();
+        }
+    }
+
+    function handleDragStart(e, index) {
+        dragStartIndex = index;
+        e.dataTransfer.effectAllowed = 'copyMove';
+        e.dataTransfer.setData('text/plain', index);
+        setTimeout(() => e.target.classList.add('dragging'), 0);
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = e.ctrlKey ? 'copy' : 'move';
+    }
+
+    function handleDragEnter(e) {
+        e.preventDefault();
+        const row = e.target.closest('.row');
+        if (row) row.classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+        const row = e.target.closest('.row');
+        if (row && !row.contains(e.relatedTarget)) {
+            row.classList.remove('drag-over');
+        }
+    }
+
+    function handleDrop(e, dropIndex) {
+        e.preventDefault();
+        const row = e.target.closest('.row');
+        if (row) row.classList.remove('drag-over');
+        
+        if (dragStartIndex === -1) return;
+
+        const isCopy = e.ctrlKey;
+        const draggedItem = JSON.parse(JSON.stringify(steps[dragStartIndex]));
+
+        if (isCopy) {
+            steps.splice(dropIndex + 1, 0, draggedItem);
+            markModified();
+        } else {
+            if (dragStartIndex === dropIndex) return;
+            steps.splice(dragStartIndex, 1);
+            steps.splice(dropIndex, 0, draggedItem);
+            markModified();
+        }
+
+        dragStartIndex = -1;
+        renderInputs();
+        forceDraw();
+    }
+
+    function handleDragEnd(e) {
+        e.target.classList.remove('dragging');
+        e.target.removeAttribute('draggable'); 
+        document.querySelectorAll('.row').forEach(row => row.classList.remove('drag-over'));
+        dragStartIndex = -1;
+    }
+
+    function handleTimeInput(input, index) {
+        steps[index].time = input.value;
+        markModified();
+        forceDraw(); 
+    }
+
+    function formatTimeBlur(input, index) {
+        let val = input.value.trim();
+        
+        if (/^\d+$/.test(val)) { 
+            if (val.length <= 2) val = val + ":00";
+            else val = val.slice(0, -2) + ":" + val.slice(-2);
+        } else if (!val.includes(":") && !val.includes("h") && !val.includes("m") && val !== "") {
+            val = val + ":00";
+        }
+        
+        input.value = val;
+        steps[index].time = val;
+        markModified();
+        forceDraw();
+    }
+
+    function parseToMinutes(tStr) {
+        if (!tStr) return 0;
+        tStr = tStr.toString().trim();
+        
+        if (tStr.includes(':')) {
+            const parts = tStr.split(':');
+            return (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+        } else if (/^\d+$/.test(tStr)) {
+            if (tStr.length <= 2) return (parseInt(tStr, 10) || 0) * 60;
+            else return (parseInt(tStr.slice(0, -2), 10) || 0) * 60 + (parseInt(tStr.slice(-2), 10) || 0);
+        } else if (tStr.includes('h') || tStr.includes('m')) { 
+            let total = 0;
+            const hMatch = tStr.match(/(\d+)\s*h/i);
+            const mMatch = tStr.match(/(\d+)\s*m/i);
+            if (hMatch) total += parseInt(hMatch[1], 10) * 60;
+            if (mMatch) total += parseInt(mMatch[1], 10);
+            return total;
+        }
+        return parseInt(tStr, 10) || 0;
+    }
+
+    function forceDraw() { lastDrawTime = 0; }
+
+    function drawLoop(ts) {
+        const wrapper = document.getElementById('canvas-wrapper');
+        if (!wrapper) return requestAnimationFrame(drawLoop);
+
+        const rect = wrapper.getBoundingClientRect();
+        const w = rect.width;
+        const h = rect.height;
+
+        if (w === 0 || h === 0) return requestAnimationFrame(drawLoop);
+
+        if (!lastDrawTime || canvas.dataset.w != w || canvas.dataset.h != h) {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.dataset.w = w;
+            canvas.dataset.h = h;
+
+            ctx.save();
+            ctx.scale(dpr, dpr);
+            draw(w, h);
+            ctx.restore();
+            
+            lastDrawTime = ts;
+        }
+        requestAnimationFrame(drawLoop);
+    }
+
+    function draw(w, h) {
+        ctx.clearRect(0, 0, w, h);
+        const padL = 70, padR = 40, padT = 100, padB = 80;
+        const g_w = w - padL - padR;
+        const g_h = h - padT - padB;
+        
+        const axisColor = getComputedStyle(document.body).getPropertyValue('--axis').trim() || '#ffffff';
+        const textColor = getComputedStyle(document.body).getPropertyValue('--text').trim() || '#eeeeee';
+
+        let totalMin = steps.reduce((acc, s) => acc + parseToMinutes(s.time), 0);
+        const totalMinForScale = totalMin > 0 ? totalMin : 1; 
+        
+        // 온도/습도 최소 및 최대값 표시 로직
+        if (steps.length > 0) {
+            let minTemp = Math.min(...steps.map(s => Number(s.temp)));
+            let maxTemp = Math.max(...steps.map(s => Number(s.temp)));
+            let minHumi = Math.min(...steps.map(s => Number(s.humi)));
+            let maxHumi = Math.max(...steps.map(s => Number(s.humi)));
+            document.getElementById('scenario-range-disp').innerText = `[ Temp: ${minTemp}~${maxTemp}℃ | Humi: ${minHumi}~${maxHumi}% ]`;
+        } else {
+            document.getElementById('scenario-range-disp').innerText = "";
+        }
+
+        document.getElementById('totalTime').innerText = `Total: ${Math.floor(totalMin/60)}h ${totalMin%60}m`;
+        
+        let x_scale = g_w / totalMinForScale;
+        let getY = (t) => (h - padB) - ((t - (-50)) / 140) * g_h; 
+
+        // 배경 눈금 라인
+        ctx.strokeStyle = document.body.getAttribute('data-theme') === 'light' ? "#e0e0e0" : "#333333";
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1;
+        for(let t = -50; t <= 90; t += 20) {
+            let y = getY(t);
+            ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + g_w, y); ctx.stroke();
+            ctx.fillStyle = textColor; ctx.font = "10px Arial"; ctx.textAlign = "right";
+            ctx.fillText(t + "°C", padL - 10, y + 4);
+        }
+
+        // 메인 X/Y 축
+        ctx.strokeStyle = axisColor; ctx.lineWidth = 2; ctx.beginPath();
+        ctx.moveTo(padL, padT - 30); ctx.lineTo(padL, h - padB); ctx.lineTo(padL + g_w + 20, h - padB); ctx.stroke();
+        ctx.fillStyle = axisColor;
+        ctx.beginPath(); ctx.moveTo(padL - 5, padT - 25); ctx.lineTo(padL, padT - 35); ctx.lineTo(padL + 5, padT - 25); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(padL + g_w + 15, h - padB - 5); ctx.lineTo(padL + g_w + 25, h - padB); ctx.lineTo(padL + g_w + 15, h - padB + 5); ctx.fill();
+
+        // 0도 가이드
+        ctx.setLineDash([5, 5]); ctx.strokeStyle = "rgba(128,128,128,0.4)";
+        ctx.beginPath(); ctx.moveTo(padL, getY(0)); ctx.lineTo(padL + g_w, getY(0)); ctx.stroke(); ctx.setLineDash([]);
+
+        // X축 하단 시간 텍스트 표기 (h 단위만)
+        if (totalMin > 0) {
+            let numTicks = 12; 
+            if (totalMin <= 60) numTicks = 5;
+            else if (totalMin <= 180) numTicks = 7;
+            
+            for (let i = 0; i < numTicks; i++) {
+                let m = (totalMin * i) / (numTicks - 1);
+                let x = padL + m * x_scale;
+                
+                let hStr = Math.round(m / 60); 
+                let timeStr = `${hStr}h`;
+                
+                ctx.fillStyle = (i === numTicks - 1) ? "#00d8d6" : textColor;
+                ctx.textAlign = "center"; 
+                ctx.font = "bold 11px Arial";
+                
+                ctx.beginPath();
+                ctx.moveTo(x, h - padB);
+                ctx.lineTo(x, h - padB + 5);
+                ctx.strokeStyle = axisColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                
+                ctx.fillText(timeStr, x, h - padB + 20);
+            }
+        } else {
+            ctx.fillStyle = textColor; ctx.textAlign = "center"; ctx.font = "bold 11px Arial";
+            ctx.fillText("0h", padL, h - padB + 20);
+        }
+
+        if (steps.length === 0 || totalMin === 0) return;
+
+        let curX = padL;
+        let prevP = { x: padL, y: getY(25) };
+        let humiMergeStart = padL;
+        let currentHumi = parseInt(steps[0].humi) || 0;
+        let cumMin = 0;
+
+        steps.forEach((s, i) => {
+            const stepMin = parseToMinutes(s.time);
+            cumMin += stepMin;
+            const nextX = curX + stepMin * x_scale;
+            const nextY = getY(s.temp);
+            
+            // 세로 점선 (온도 변곡점 마커)
+            ctx.beginPath(); ctx.setLineDash([3, 3]); ctx.strokeStyle = "rgba(128, 128, 128, 0.4)"; ctx.lineWidth = 1;
+            ctx.moveTo(nextX, nextY); ctx.lineTo(nextX, h - padB); ctx.stroke(); ctx.setLineDash([]);
+
+            // 온도 선 (빨간색)
+            ctx.strokeStyle = "#FF3B30"; ctx.lineWidth = 3; ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(prevP.x, prevP.y); ctx.lineTo(nextX, nextY); ctx.stroke();
+
+            // 습도 표시 구역
+            const nextStepHumi = steps[i+1] ? (parseInt(steps[i+1].humi) || 0) : null;
+            if (currentHumi !== nextStepHumi || i === steps.length - 1) {
+                drawHumiSection(humiMergeStart, nextX, padT - 25, (currentHumi === 0 ? "습도 조절 무" : currentHumi + "%"));
+                
+                if (nextStepHumi !== null && currentHumi !== nextStepHumi) {
+                    ctx.beginPath(); ctx.setLineDash([4, 4]); ctx.strokeStyle = "#007BFF"; ctx.lineWidth = 1.5;
+                    ctx.moveTo(nextX, padT - 25); ctx.lineTo(nextX, nextY); ctx.stroke(); ctx.setLineDash([]);
+                }
+                
+                humiMergeStart = nextX;
+                if (nextStepHumi !== null) currentHumi = nextStepHumi;
+            }
+
+            // Cycle 구간 표시 (사용자가 직접 입력한 구간명도 그대로 표시됨)
+            if (i === 0 || s.cyc !== steps[i - 1].cyc) {
+                const cyY = h - padB + 60;
+                let cyTotal = 0; 
+                for (let j = i; j < steps.length && steps[j].cyc === s.cyc; j++) cyTotal += parseToMinutes(steps[j].time);
+                const cyNextX = curX + cyTotal * x_scale;
+
+                ctx.strokeStyle = "#ff9f43"; ctx.lineWidth = 2; ctx.beginPath(); 
+                ctx.moveTo(curX + 3, cyY); ctx.lineTo(cyNextX - 3, cyY); ctx.stroke();
+                ctx.fillStyle = "#ff9f43"; ctx.textAlign = "center"; ctx.font = "bold 11px Arial"; 
+                ctx.fillText(s.cyc, curX + (cyNextX - curX) / 2, cyY - 10);
+            }
+
+            prevP = { x: nextX, y: nextY }; 
+            curX = nextX;
+        });
+
+        // 온도 꼭짓점
+        curX = padL;
+        steps.forEach(s => {
+            const stepMin = parseToMinutes(s.time);
+            const nextX = curX + stepMin * x_scale;
+            const nextY = getY(s.temp);
+            ctx.fillStyle = "#FF3B30";
+            ctx.beginPath(); ctx.arc(nextX, nextY, 4, 0, Math.PI * 2); ctx.fill();
+            curX = nextX;
+        });
+
+        // 시뮬레이션 진행바
+        if (isRunning) {
+            const stStr = document.getElementById('start-time').value;
+            if (stStr) {
+                const elapsed = (new Date() - new Date(stStr)) / 60000;
+                if (elapsed >= 0 && elapsed <= totalMin) {
+                    const lineX = padL + elapsed * x_scale;
+                    ctx.strokeStyle = "#00ffcc"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]);
+                    ctx.beginPath(); ctx.moveTo(lineX, padT - 20); ctx.lineTo(lineX, h - padB + 40); ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            }
+        }
+    }
+
+    function drawHumiSection(x1, x2, y, text) {
+        if (x2 - x1 < 5) return;
+        ctx.strokeStyle = "#007BFF"; ctx.lineWidth = 2; ctx.setLineDash([]); 
+        ctx.beginPath(); ctx.moveTo(x1 + 3, y); ctx.lineTo(x2 - 3, y); ctx.stroke();
+        ctx.fillStyle = "#007BFF"; ctx.font = "bold 11px Arial"; ctx.textAlign = "center";
+        ctx.fillText(text, x1 + (x2 - x1) / 2, y - 8);
+    }
+
+    function toggleRun() {
+        isRunning = !isRunning;
+        const btn = document.getElementById('run-btn');
+        btn.innerText = isRunning ? "Stop ■" : "Start ▶";
+        btn.className = isRunning ? "btn-run stop" : "btn-run";
+        
+        if (isRunning) {
+            forceDraw();
+            refreshTimer = setInterval(forceDraw, 3 * 60 * 1000);
+        } else {
+            if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+            forceDraw();
+        }
+    }
+</script>
+</body>
+</html>

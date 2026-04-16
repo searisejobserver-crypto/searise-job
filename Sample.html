@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Searise Pro - H/W Sample Manager</title>
+    <!-- 공통 로직 파일 연결 (헤더, 테마, 세이버 자동 주입) -->
+    <script src="./assets/js/common.js" defer></script>
+    <style>
+        /* Sample Manager 전용 커스텀 스타일 */
+        :root {
+            --save-btn: #2ecc71; 
+            --del-btn: #ff5e57;
+            --mod-btn: #f1c40f;
+            --cycle-orange: #FF9500;
+            --filter-bg: #2a2a2a;
+            
+            /* Status Colors */
+            --status-normal: #2ecc71; /* 정상: 녹색 */
+            --status-bad: #ff5e57;    /* 불량, 폐기: 붉은색 */
+            --status-debug: #FF9500;  /* 디버깅: 주황색 */
+            --status-field: #00a8ff;  /* 현장: 밝은 블루 */
+            --status-ext: #192a56;    /* 외부: 딥 블루 */
+        }
+        [data-theme="light"] {
+            --save-btn: #27ae60;
+            --filter-bg: #f8f9fa;
+            --status-ext: #273c75;
+            --mod-btn: #d35400;
+        }
+
+        /* 메인 레이아웃 */
+        .container { 
+            padding: 20px; 
+            display: flex; 
+            gap: 20px; 
+            height: calc(100vh - 85px); /* 헤더 영역 제외 */
+            box-sizing: border-box; 
+        }
+        
+        /* 좌측 사이드바 (제품 리스트) */
+        .sidebar { 
+            width: 320px; 
+            background: var(--card); 
+            border: 1px solid var(--border); 
+            border-radius: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+        .sidebar-header { 
+            padding: 15px; 
+            background: #333; 
+            color: #fff; 
+            text-align: center; 
+            letter-spacing: 1px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .sidebar-header .title { font-weight: bold; font-size: 1.1rem; }
+        .sidebar-header .sort-options {
+            font-size: 0.85rem;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            color: #ccc;
+        }
+        .sort-options label { cursor: pointer; display: flex; align-items: center; gap: 4px; }
+        .sort-options input { accent-color: var(--accent); cursor: pointer; }
+
+        [data-theme="light"] .sidebar-header { 
+            background: #dfe6e9; 
+            color: #2d3436; 
+            border-bottom: 1px solid var(--border); 
+        }
+        [data-theme="light"] .sort-options { color: #555; }
+
+        .add-proj { 
+            display: flex; 
+            padding: 10px; 
+            border-bottom: 1px solid var(--border); 
+            background: var(--bg);
+        }
+        .add-proj input { 
+            flex: 1; 
+            padding: 10px; 
+            border: 1px solid var(--border); 
+            background: var(--input-bg); 
+            color: var(--text); 
+            border-radius: 4px 0 0 4px; 
+            outline: none;
+        }
+        .add-proj input:focus { border-color: var(--accent); }
+        .add-proj button { 
+            padding: 0 15px; 
+            border: none; 
+            background: var(--accent); 
+            color: #000; 
+            font-weight: bold; 
+            cursor: pointer; 
+            border-radius: 0 4px 4px 0; 
+            transition: 0.2s;
+        }
+        .add-proj button:hover { opacity: 0.8; }
+        
+        .project-list { 
+            list-style: none; 
+            margin: 0; 
+            padding: 0; 
+            overflow-y: auto; 
+            flex: 1; 
+        }
+        .project-list li { 
+            padding: 12px 15px; 
+            border-bottom: 1px solid var(--border); 
+            cursor: pointer; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            transition: 0.2s;
+            gap: 10px;
+        }
+        .project-list li:hover { background: rgba(0, 216, 214, 0.1); }
+        .project-list li.active { 
+            background: rgba(0, 216, 214, 0.15); 
+            border-left: 4px solid var(--accent); 
+            font-weight: bold; 
+            color: var(--accent);
+        }
+        
+        .proj-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* 제품 리스트 액션 버튼 (기호 복원) */
+        .proj-actions { display: flex; gap: 8px; align-items: center; }
+        .proj-actions button { 
+            background: none; border: none; cursor: pointer; 
+            font-size: 1.2rem; padding: 0 4px; opacity: 0.6; transition: all 0.2s; 
+            color: var(--text); display: flex; justify-content: center; align-items: center;
+        }
+        .btn-save-proj { opacity: 1 !important; color: var(--save-btn) !important; font-size: 1.1rem !important; }
+        .btn-edit-proj:hover { opacity: 1; color: #f1c40f; transform: scale(1.2); }
+        .btn-del-proj:hover { opacity: 1; color: var(--del-btn); transform: scale(1.2); }
+
+        /* 우측 메인 콘텐츠 (데이터 테이블) */
+        .main-content { 
+            flex: 1; 
+            background: var(--card); 
+            border: 1px solid var(--border); 
+            border-radius: 8px; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+        }
+        
+        /* 툴바 (Bulk 일괄 생성 및 액션 버튼) */
+        .bulk-toolbar { 
+            display: flex; 
+            gap: 8px; 
+            padding: 15px; 
+            border-bottom: 1px solid var(--border); 
+            background: var(--bg); 
+            flex-wrap: wrap; 
+            align-items: center; 
+        }
+        .bulk-toolbar input, .bulk-toolbar select { 
+            padding: 8px 10px; 
+            border: 1px solid var(--border); 
+            background: var(--input-bg); 
+            color: var(--text); 
+            border-radius: 4px; 
+            width: 110px; 
+            outline: none;
+            box-sizing: border-box;
+        }
+        
+        /* 다크모드 달력 아이콘 하얗게 표시 */
+        input[type="date"] { color-scheme: dark; width: 130px !important; }
+        [data-theme="light"] input[type="date"] { color-scheme: light; }
+
+        .bulk-toolbar input:focus, .bulk-toolbar select:focus { border-color: var(--accent); }
+        .bulk-toolbar input[type="number"] { text-align: center; }
+        .bulk-toolbar select { width: 90px; cursor: pointer; font-weight: bold;}
+        
+        .bulk-toolbar .btn-base { 
+            padding: 8px 15px; 
+            border: none; 
+            background: #444; 
+            color: #fff; 
+            font-weight: bold; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            transition: 0.2s;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .bulk-toolbar .btn-base:hover { background: #555; }
+        
+        /* 일괄 생성 그룹 디자인 */
+        .generate-group {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 216, 214, 0.1);
+            border: 1px solid var(--accent);
+            border-radius: 4px;
+            padding: 2px;
+            gap: 5px;
+        }
+        .generate-group span {
+            font-size: 0.85rem;
+            font-weight: bold;
+            color: var(--accent);
+            padding-left: 10px;
+        }
+        .generate-group input[type="number"] {
+            width: 55px;
+            border: none;
+            background: transparent;
+            color: var(--text);
+            font-size: 1rem;
+            padding: 5px;
+        }
+        .generate-group input[type="number"]:focus { outline: none; border: none; }
+        .generate-group button {
+            background: var(--accent);
+            color: #000;
+            margin: 0;
+            padding: 8px 15px;
+            border-radius: 3px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .generate-group button:hover { background: #00b8b6; }
+
+        /* 메인 액션 버튼 묶음 (텍스트 기반) */
+        .action-group {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+        }
+        .btn-text-action { 
+            background: transparent; 
+            border: 1px solid transparent; 
+            border-radius: 4px;
+            font-size: 0.95rem; 
+            font-weight: bold;
+            padding: 6px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-text-action:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+        [data-theme="light"] .btn-text-action:hover { background: rgba(0,0,0,0.05); border-color: rgba(0,0,0,0.1); }
+
+        .btn-text-save { color: var(--save-btn); font-size: 1.1rem; }
+        .btn-text-del { color: var(--del-btn); font-size: 1.1rem; }
+        .btn-text-del:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        /* 필터 바 (버전, 상태) */
+        .filter-bar {
+            display: flex; gap: 15px; padding: 10px 15px;
+            background: var(--filter-bg); border-bottom: 1px solid var(--border);
+            align-items: center; font-size: 0.9rem;
+        }
+        .filter-item { display: flex; align-items: center; gap: 8px; }
+        .filter-item select {
+            padding: 6px 10px; border-radius: 4px; background: var(--input-bg);
+            color: var(--text); border: 1px solid var(--border); outline: none; font-weight: bold;
+        }
+        .filter-item select:focus { border-color: var(--accent); }
+
+        /* 테이블 래퍼 */
+        .table-container { 
+            flex: 1; 
+            overflow: auto; 
+            padding: 0; 
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            min-width: 1000px; 
+            table-layout: auto; 
+        }
+        th, td { 
+            border: 1px solid var(--border); 
+            border-top: none;
+            padding: 0; 
+            text-align: center; 
+            font-size: 0.9rem; 
+        }
+        th { 
+            background: #333; 
+            color: #fff; 
+            position: sticky; 
+            top: 0; 
+            z-index: 10; 
+            padding: 12px 8px;
+            border-bottom: 2px solid #555;
+            font-weight: 600;
+            white-space: nowrap; 
+        }
+        th.sortable { cursor: pointer; user-select: none; transition: background 0.2s; }
+        th.sortable:hover { background: #444; color: var(--accent); }
+        [data-theme="light"] th { 
+            background: #dfe6e9; 
+            color: #2d3436; 
+            border-bottom: 2px solid var(--border);
+        }
+        [data-theme="light"] th.sortable:hover { background: #d0d8dc; }
+        
+        td input[type="text"], td input[type="date"], td select { 
+            width: 100%; 
+            min-width: 60px; 
+            height: 100%; 
+            box-sizing: border-box; 
+            padding: 10px 5px; 
+            border: none; 
+            background: transparent; 
+            color: var(--text); 
+            text-align: center; 
+        }
+        td input[type="text"]:focus, td input[type="date"]:focus, td select:focus { 
+            background: rgba(0, 216, 214, 0.05); 
+            outline: 2px solid var(--accent); 
+            outline-offset: -2px;
+        }
+        
+        /* 상태(Status) 컬럼 색상 지정 클래스 */
+        .status-select { cursor: pointer; font-weight: bold; border-radius: 4px; }
+        .status-select.s-normal { color: var(--status-normal); background: rgba(46, 204, 113, 0.1); }
+        .status-select.s-debug { color: var(--status-debug); background: rgba(255, 149, 0, 0.1); }
+        .status-select.s-bad { color: var(--status-bad); background: rgba(255, 94, 87, 0.1); }
+        .status-select.s-field { color: var(--status-field); background: rgba(0, 168, 255, 0.1); }
+        .status-select.s-ext { color: var(--status-ext); background: rgba(25, 42, 86, 0.1); }
+        [data-theme="light"] .status-select.s-ext { background: rgba(39, 60, 117, 0.1); }
+        
+        td select option { background: var(--input-bg); color: var(--text); }
+        
+        td input[type="checkbox"] {
+            transform: scale(1.3);
+            cursor: pointer;
+            accent-color: var(--del-btn);
+        }
+        th input[type="checkbox"] {
+            transform: scale(1.3);
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- 제품 리스트 사이드바 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="title">Product List</div>
+                <div class="sort-options">
+                    <label><input type="radio" name="proj-sort" value="date" checked onchange="renderProjectList()"> 최신순</label>
+                    <label><input type="radio" name="proj-sort" value="name" onchange="renderProjectList()"> 이름순</label>
+                </div>
+            </div>
+            <div class="add-proj">
+                <input type="text" id="new-proj-name" placeholder="제품 이름 입력" onkeydown="if(event.key==='Enter') addProject();">
+                <button onclick="addProject()">추가</button>
+            </div>
+            <ul id="project-list" class="project-list"></ul>
+        </div>
+        
+        <!-- 데이터 매니저 메인 -->
+        <div class="main-content">
+            <div class="bulk-toolbar">
+                <input type="text" id="base-hw" placeholder="H/W ver">
+                <input type="text" id="base-sn" placeholder="Base S/N">
+                <input type="text" id="base-pon" placeholder="Base PON S/N">
+                <input type="text" id="base-mac" placeholder="Base MAC">
+                <select id="mac-step" title="MAC 증가 옵션">
+                    <option value="1">MAC +1</option>
+                    <option value="2">MAC +2</option>
+                </select>
+                <input type="date" id="base-date" title="Release Date">
+                
+                <div style="flex-grow: 1;"></div>
+                
+                <div class="generate-group">
+                    <span>수량</span>
+                    <input type="number" id="base-count" value="1" min="1" max="100" title="생성할 수량 (최대 100개)">
+                    <button onclick="generateBulk()">일괄 생성</button>
+                </div>
+
+                <div style="width:1px; background:var(--border); height:20px; margin:0 10px;"></div>
+
+                <!-- 텍스트 액션 버튼 그룹 -->
+                <div class="action-group">
+                    <button class="btn-base" onclick="exportCSV()">CSV 내보내기</button>
+                    <div style="width:1px; background:var(--border); height:15px; margin:0 5px;"></div>
+                    <button id="main-save-btn" class="btn-text-action btn-text-save" onclick="saveProjectData(event)" title="Save">Save</button>
+                    <button id="btn-delete-selected" class="btn-text-action btn-text-del" onclick="deleteSelectedRows()" title="Delete" style="display: none;">Delete</button>
+                </div>
+            </div>
+
+            <!-- 필터 바 (H/W Ver, 상태) -->
+            <div class="filter-bar">
+                <div class="filter-item">
+                    <label>버전(H/W) 필터:</label>
+                    <select id="filter-hw" onchange="renderMainTable()"><option value="">전체 (All)</option></select>
+                </div>
+                <div class="filter-item">
+                    <label>상태 필터:</label>
+                    <select id="filter-status" onchange="renderMainTable()">
+                        <option value="">전체 (All)</option>
+                        <option value="정상">정상</option>
+                        <option value="디버깅">디버깅</option>
+                        <option value="현장">현장</option>
+                        <option value="외부">외부</option>
+                        <option value="불량">불량</option>
+                        <option value="폐기">폐기</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table id="data-table">
+                    <thead>
+                        <tr>
+                            <!-- H/W Ver 정렬 지원 (클릭 가능) -->
+                            <th class="sortable" onclick="toggleHwSort()" title="클릭하여 H/W 버전 정렬">
+                                H/W Ver <span id="hw-sort-icon">▲</span>
+                            </th>
+                            <th>S/N</th>
+                            <th>PON S/N</th>
+                            <th>Mac Addr</th>
+                            <th>Release</th>
+                            <th>사용자</th>
+                            <th>상태</th>
+                            <th>이원화</th>
+                            <th>비고</th>
+                            <th><input type="checkbox" id="selectAll" title="전체 선택" onclick="toggleSelectAll(this)"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="data-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 전역 상태 변수
+        let sampleDb;
+        let projects = [];
+        let currentProjectName = null;
+        let currentData = [];
+        let isModified = false; 
+
+        // H/W 버전 정렬 상태 (asc, desc, none) 기본 오름차순 설정
+        let hwSortOrder = 'asc'; 
+
+        const statusOptions = [
+            { val: "정상", cls: "s-normal" },
+            { val: "디버깅", cls: "s-debug" },
+            { val: "현장", cls: "s-field" },
+            { val: "외부", cls: "s-ext" },
+            { val: "불량", cls: "s-bad" },
+            { val: "폐기", cls: "s-bad" }
+        ];
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const startUI = () => {
+                if (typeof window.initHeader === 'function') {
+                    window.initHeader('H/W Sample Manager'); 
+                    initSampleDB(); 
+                } else {
+                    setTimeout(startUI, 100);
+                }
+            };
+            startUI();
+            document.getElementById('base-date').valueAsDate = new Date();
+        });
+
+        function markModified(modified = true) {
+            isModified = modified;
+
+            // 툴바 메인 Save 버튼 변경 시 ✎ 아이콘 표시
+            const mainSaveBtn = document.getElementById('main-save-btn');
+            if (mainSaveBtn) {
+                if (isModified) {
+                    mainSaveBtn.style.color = 'var(--cycle-orange)';
+                    mainSaveBtn.innerHTML = 'Save‼️';
+                } else {
+                    mainSaveBtn.style.color = 'var(--save-btn)';
+                    mainSaveBtn.innerHTML = 'Save';
+                }
+            }
+
+          
+        }
+
+        function initSampleDB() {
+            const req = indexedDB.open("HwSampleDB", 1);
+            req.onupgradeneeded = (e) => {
+                const database = e.target.result;
+                if (!database.objectStoreNames.contains("projects")) {
+                    database.createObjectStore("projects", { keyPath: "name" });
+                }
+            };
+            req.onsuccess = (e) => {
+                sampleDb = e.target.result;
+                loadProjects();
+            };
+            req.onerror = (e) => {
+                console.error("Sample DB Error:", e);
+                alert("데이터베이스를 열 수 없습니다.");
+            };
+        }
+
+        function loadProjects() {
+            const tx = sampleDb.transaction("projects", "readonly");
+            const req = tx.objectStore("projects").getAll();
+            req.onsuccess = (e) => {
+                projects = e.target.result || [];
+                
+                // 생성일자(createdAt)가 없는 기존 데이터 소급 적용
+                projects.forEach(p => { if (!p.createdAt) p.createdAt = Date.now(); });
+                
+                renderProjectList();
+                if (projects.length > 0) {
+                    selectProject(projects[0].name);
+                } else {
+                    currentProjectName = null;
+                    currentData = [];
+                    renderMainTable();
+                }
+            };
+        }
+
+        function renderProjectList() {
+            const ul = document.getElementById('project-list');
+            ul.innerHTML = '';
+            
+            // 라디오 버튼(최신순, 이름순) 값 읽어와서 배열 정렬
+            const sortMode = document.querySelector('input[name="proj-sort"]:checked').value;
+            let sortedProjects = [...projects];
+            if (sortMode === 'name') {
+                sortedProjects.sort((a, b) => a.name.localeCompare(b.name));
+            } else {
+                // date 최신순
+                sortedProjects.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            }
+
+            sortedProjects.forEach(p => {
+                const isActive = p.name === currentProjectName;
+                const li = document.createElement('li');
+                li.className = isActive ? 'active' : '';
+                
+                // 아이콘 복원 (수정 ✎, 삭제 ✕, )
+                li.innerHTML = `
+                    <span class="proj-name" onclick="selectProject('${p.name}')" title="${p.name}">${p.name}</span>
+                    <div class="proj-actions">
+                        <button class="btn-edit-proj" title="Modify" onclick="renameProject(event, '${p.name}')">✎</button>
+                        <button class="btn-del-proj" title="Delete Project" onclick="deleteProject(event, '${p.name}')">✕</button>
+                    </div>
+                `;
+                ul.appendChild(li);
+            });
+            markModified(isModified);
+        }
+
+        function addProject() {
+            const name = document.getElementById('new-proj-name').value.trim();
+            if (!name) return alert("제품 이름을 입력하세요.");
+            if (projects.some(p => p.name === name)) return alert("이미 존재하는 제품입니다.");
+            
+            const newProj = { name: name, data: [], createdAt: Date.now() };
+            
+            const tx = sampleDb.transaction("projects", "readwrite");
+            tx.objectStore("projects").put(newProj);
+            tx.oncomplete = () => {
+                projects.push(newProj);
+                document.getElementById('new-proj-name').value = '';
+                selectProject(name);
+            };
+        }
+
+        // 현재 선택된 프로젝트 이름 변경 (리스트에서 아이콘 클릭 시 호출됨)
+        function renameProject(event, oldName) {
+            if (event) event.stopPropagation();
+            const newName = prompt("수정할 제품의 새로운 이름을 입력하세요:", oldName);
+            if (!newName || newName.trim() === "" || newName === oldName) return;
+            if (projects.some(p => p.name === newName)) {
+                alert("이미 존재하는 제품 이름입니다.");
+                return;
+            }
+            
+            const tx = sampleDb.transaction("projects", "readwrite");
+            const store = tx.objectStore("projects");
+            
+            const req = store.get(oldName);
+            req.onsuccess = () => {
+                const data = req.result.data;
+                store.put({ name: newName, data: data, createdAt: req.result.createdAt || Date.now() });
+                store.delete(oldName);
+            };
+            
+            tx.oncomplete = () => {
+                const proj = projects.find(p => p.name === oldName);
+                if (proj) proj.name = newName;
+                if (currentProjectName === oldName) currentProjectName = newName;
+                renderProjectList();
+            };
+        }
+
+        // 프로젝트 전체 삭제 (리스트에서 아이콘 클릭 시 호출됨)
+        function deleteProject(event, name) {
+            if (event) event.stopPropagation();
+            if (!confirm(`[${name}] 제품과 기록된 모든 데이터를 삭제하시겠습니까?`)) return;
+            
+            const tx = sampleDb.transaction("projects", "readwrite");
+            tx.objectStore("projects").delete(name);
+            tx.oncomplete = () => {
+                projects = projects.filter(p => p.name !== name);
+                if (currentProjectName === name) {
+                    if (projects.length > 0) {
+                        selectProject(projects[0].name);
+                    } else {
+                        currentProjectName = null;
+                        currentData = [];
+                        renderProjectList();
+                        renderMainTable();
+                    }
+                } else {
+                    renderProjectList();
+                }
+            };
+        }
+
+        function selectProject(name) {
+            currentProjectName = name;
+            const proj = projects.find(p => p.name === name);
+            currentData = proj ? JSON.parse(JSON.stringify(proj.data)) : [];
+            isModified = false; 
+            
+            // 필터 초기화
+            document.getElementById('filter-hw').value = "";
+            document.getElementById('filter-status').value = "";
+            
+            renderProjectList();
+            renderMainTable();
+        }
+
+        function saveProjectData(event) {
+            if (event) event.stopPropagation();
+            if (!currentProjectName) return;
+            
+            const targetProj = projects.find(p => p.name === currentProjectName);
+            const savedItem = { 
+                name: currentProjectName, 
+                data: currentData, 
+                createdAt: targetProj ? targetProj.createdAt : Date.now() 
+            };
+
+            const tx = sampleDb.transaction("projects", "readwrite");
+            tx.objectStore("projects").put(savedItem);
+            tx.oncomplete = () => {
+                const idx = projects.findIndex(p => p.name === currentProjectName);
+                if(idx > -1) projects[idx].data = JSON.parse(JSON.stringify(currentData));
+                
+                markModified(false);
+            };
+        }
+
+        function updateFilterOptions() {
+            const hwSelect = document.getElementById('filter-hw');
+            const currentValue = hwSelect.value;
+            
+            const uniqueHws = [...new Set(currentData.map(r => (r.hw || '').trim()).filter(h => h !== ''))].sort();
+            
+            hwSelect.innerHTML = '<option value="">전체 (All)</option>' + 
+                uniqueHws.map(hw => `<option value="${hw}">${hw}</option>`).join('');
+            
+            if (uniqueHws.includes(currentValue)) {
+                hwSelect.value = currentValue;
+            }
+        }
+
+        function toggleSelectAll(masterCb) {
+            const checkboxes = document.querySelectorAll('.row-checkbox');
+            checkboxes.forEach(cb => cb.checked = masterCb.checked);
+            updateDeleteButtonState();
+        }
+
+        function updateDeleteButtonState() {
+            const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+            const delBtn = document.getElementById('btn-delete-selected');
+            
+            if (checkedCount > 0) {
+                // 행 삭제 버튼 보이기
+                delBtn.style.display = 'inline-flex';
+                delBtn.innerHTML = `✕ Delete (${checkedCount})`;
+                delBtn.title = 'Delete Selected Rows';
+            } else {
+                delBtn.style.display = 'none';
+            }
+        }
+
+        // 선택된 행 삭제 함수
+        function deleteSelectedRows() {
+            const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+            if (checkboxes.length === 0) return;
+            
+            if (!confirm(`선택한 ${checkboxes.length}개 항목을 삭제하시겠습니까?`)) return;
+
+            const indices = Array.from(checkboxes).map(cb => parseInt(cb.value)).sort((a, b) => b - a);
+            
+            indices.forEach(idx => {
+                currentData.splice(idx, 1);
+            });
+
+            markModified(true);
+            renderMainTable();
+        }
+
+        function incrementString(str, step = 1) {
+            if (!str) return "";
+            return str.replace(/(\d+)(?!.*\d)/, (match) => {
+                const num = parseInt(match, 10) + step;
+                return num.toString().padStart(match.length, '0');
+            });
+        }
+
+        function incrementMac(mac, step) {
+            if (!mac) return "";
+            if (step === 0) return mac;
+
+            const hasColon = mac.includes(':');
+            const cleanMac = mac.replace(/:/g, ''); 
+
+            if (!/^[0-9a-fA-F]+$/.test(cleanMac)) return mac; 
+
+            let macInt = BigInt('0x' + cleanMac);
+            macInt += BigInt(step);
+
+            let newMacStr = macInt.toString(16).toUpperCase().padStart(cleanMac.length, '0');
+
+            if (hasColon) {
+                const parts = [];
+                for (let i = 0; i < newMacStr.length; i += 2) {
+                    parts.push(newMacStr.substring(i, i + 2));
+                }
+                return parts.join(':');
+            }
+
+            return newMacStr;
+        }
+
+        function generateBulk() {
+            if (!currentProjectName) { alert("좌측에서 제품을 먼저 추가하거나 선택하세요."); return; }
+            
+            let count = parseInt(document.getElementById('base-count').value) || 1;
+            
+            if (count > 100) {
+                alert("한 번에 최대 100개까지만 일괄 생성이 가능합니다.");
+                count = 100;
+                document.getElementById('base-count').value = 100;
+            }
+
+            const hw = document.getElementById('base-hw').value.trim();
+            const snBase = document.getElementById('base-sn').value.trim();
+            const ponBase = document.getElementById('base-pon').value.trim();
+            const macBase = document.getElementById('base-mac').value.trim();
+            const macStep = parseInt(document.getElementById('mac-step').value, 10);
+            const date = document.getElementById('base-date').value;
+            const user = ""; 
+
+            let currentSn = snBase;
+            let currentPon = ponBase;
+            let currentMac = macBase;
+
+            for (let i = 0; i < count; i++) {
+                currentData.push({ 
+                    hw: hw, sn: currentSn, pon: currentPon, mac: currentMac, 
+                    date: date, user: user, status: "정상", dual: "", note: "" 
+                });
+
+                currentSn = incrementString(currentSn, 1);
+                currentPon = incrementString(currentPon, 1);
+                currentMac = incrementMac(currentMac, macStep);
+            }
+            
+            markModified(true);
+            renderMainTable();
+        }
+
+        function getStatusClass(statusVal) {
+            const opt = statusOptions.find(o => o.val === statusVal);
+            return opt ? opt.cls : "";
+        }
+
+        // H/W 정렬 토글 함수
+        function toggleHwSort() {
+            if (hwSortOrder === 'asc') hwSortOrder = 'desc';
+            else if (hwSortOrder === 'desc') hwSortOrder = 'none';
+            else hwSortOrder = 'asc';
+            renderMainTable();
+        }
+
+        function renderMainTable() {
+            const tbody = document.getElementById('data-body');
+            tbody.innerHTML = '';
+            
+            updateFilterOptions();
+
+            const masterCb = document.getElementById('selectAll');
+            if (masterCb) masterCb.checked = false;
+
+            if (!currentProjectName) {
+                tbody.innerHTML = `<tr><td colspan="10" style="padding: 30px; color: var(--sub-text);">선택된 제품이 없습니다.</td></tr>`;
+                updateDeleteButtonState();
+                
+                // 선택된 제품이 없으면 우측 버튼들 비활성화
+                document.getElementById('main-save-btn').disabled = true;
+                return;
+            } else {
+                document.getElementById('main-save-btn').disabled = false;
+            }
+
+            const filterHw = document.getElementById('filter-hw').value;
+            const filterStatus = document.getElementById('filter-status').value;
+
+            // H/W Ver 정렬 아이콘 업데이트
+            const sortIcon = document.getElementById('hw-sort-icon');
+            if (sortIcon) {
+                if (hwSortOrder === 'asc') sortIcon.innerText = '▲';
+                else if (hwSortOrder === 'desc') sortIcon.innerText = '▼';
+                else sortIcon.innerText = '';
+            }
+
+            // 원본 인덱스를 보존하며 화면에 표시할 데이터 매핑
+            let displayData = currentData.map((row, index) => ({ row, idx: index }));
+
+            // H/W Ver에 따른 정렬 처리
+            if (hwSortOrder === 'asc') {
+                displayData.sort((a, b) => (a.row.hw || '').localeCompare(b.row.hw || ''));
+            } else if (hwSortOrder === 'desc') {
+                displayData.sort((a, b) => (b.row.hw || '').localeCompare(a.row.hw || ''));
+            }
+
+            displayData.forEach((item) => {
+                const row = item.row;
+                const origIndex = item.idx;
+
+                if (filterHw && (row.hw || '').trim() !== filterHw) return;
+                if (filterStatus && row.status !== filterStatus) return;
+                
+                const curClass = getStatusClass(row.status);
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><input type="text" value="${row.hw || ''}" oninput="currentData[${origIndex}].hw=this.value; markModified(true);"></td>
+                    <td><input type="text" value="${row.sn || ''}" oninput="currentData[${origIndex}].sn=this.value; markModified(true);"></td>
+                    <td><input type="text" value="${row.pon || ''}" oninput="currentData[${origIndex}].pon=this.value; markModified(true);"></td>
+                    <td><input type="text" value="${row.mac || ''}" oninput="currentData[${origIndex}].mac=this.value; markModified(true);"></td>
+                    <td><input type="date" value="${row.date || ''}" oninput="currentData[${origIndex}].date=this.value; markModified(true);"></td>
+                    <td><input type="text" value="${row.user || ''}" oninput="currentData[${origIndex}].user=this.value; markModified(true);"></td>
+                    <td>
+                        <select class="status-select ${curClass}" onchange="
+                            currentData[${origIndex}].status=this.value; 
+                            this.className='status-select '+getStatusClass(this.value); 
+                            markModified(true);
+                        ">
+                            ${statusOptions.map(opt => `<option value="${opt.val}" ${row.status===opt.val?'selected':''}>${opt.val}</option>`).join('')}
+                        </select>
+                    </td>
+                    <td><input type="text" value="${row.dual || ''}" oninput="currentData[${origIndex}].dual=this.value; markModified(true);"></td>
+                    <td><input type="text" value="${row.note || ''}" oninput="currentData[${origIndex}].note=this.value; markModified(true);"></td>
+                    <td><input type="checkbox" class="row-checkbox" value="${origIndex}" onchange="updateDeleteButtonState()"></td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            updateDeleteButtonState();
+        }
+
+        function exportCSV() {
+            if (!currentProjectName || currentData.length === 0) {
+                return alert("내보낼 데이터가 없습니다.");
+            }
+            
+            let csv = "H/W Ver,S/N,PON S/N,Mac Addr,Release,사용자,상태,이원화,비고\n";
+            currentData.forEach(row => {
+                const escapeCsv = (str) => `"${(str || '').replace(/"/g, '""')}"`;
+                
+                csv += `${escapeCsv(row.hw)},${escapeCsv(row.sn)},${escapeCsv(row.pon)},${escapeCsv(row.mac)},${escapeCsv(row.date)},${escapeCsv(row.user)},${escapeCsv(row.status)},${escapeCsv(row.dual)},${escapeCsv(row.note)}\n`;
+            });
+            
+            const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `${currentProjectName}_Samples.csv`;
+            a.click();
+        }
+    </script>
+</body>
+</html>
